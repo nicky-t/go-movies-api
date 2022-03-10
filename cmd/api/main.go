@@ -1,11 +1,12 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"time"
 )
 
 const version = "1.0.0"
@@ -21,31 +22,33 @@ type AppState struct {
 	Version     string `json:"version"`
 }
 
+type application struct {
+	config config
+	logger *log.Logger
+}
+
 func main() {
 	var cfg config
 	flag.IntVar(&cfg.port, "port", 4000, "Server port to listen on")
 	flag.StringVar(&cfg.env, "env", "development", "Application environment (development|production)")
 	flag.Parse()
 
-	fmt.Println("running")
+	app := &application{
+		config: cfg,
+		logger: log.New(os.Stdout, "", log.Ldate|log.Ltime),
+	}
 
-	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
-		currentState := AppState{
-			Status:      "Available",
-			Environment: cfg.env,
-			Version:     version,
-		}
+	srv := &http.Server{
+		Addr:         fmt.Sprintf(":%d", cfg.port),
+		Handler:      app.routes(),
+		IdleTimeout:  time.Minute,
+		WriteTimeout: time.Second * 10,
+		ReadTimeout:  time.Second * 30,
+	}
 
-		js, err := json.MarshalIndent(currentState, "", "\t")
-		if err != nil {
-			log.Println(err.Error())
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write(js)
-	})
+	app.logger.Printf("Starting server on port %d in %s mode", cfg.port, cfg.env)
 
-	err := http.ListenAndServe(fmt.Sprintf(":%d", cfg.port), nil)
+	err := srv.ListenAndServe()
 	if err != nil {
 		log.Println(err.Error())
 	}
